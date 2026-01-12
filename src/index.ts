@@ -4,9 +4,13 @@ dotenv.config();
 import express from "express";
 
 import cors from "cors";
+
 import authRouter  from "./routes/authRouter.js";
 import eventRouter from "./routes/admin/eventRouter.js";
 import genericEventRouter from "./routes/genericEventRouter.js";
+import bookingRouter from "./routes/bookingRouter.js";
+import adminBookingRouter from "./routes/admin/adminBookingRouter.js";
+
 import { connectDB } from "./config/db.js";
 
 dotenv.config();
@@ -26,6 +30,11 @@ app.use('/v1/auth', authRouter);
 app.use('/v1/admin', eventRouter);
 //  -----------
 app.use('/v1/event', genericEventRouter);
+app.use('/v1/bookings', bookingRouter);
+
+// Admin Router for see all the bookings
+app.use('/v1/admin', adminBookingRouter)
+//  -----------------
 
 const startServer = async () => {
 

@@ -1,58 +1,92 @@
 import mongoose, { Schema, Document } from "mongoose";
 
 interface ISection {
-    name: string;
-    price: number;
-    capacity: number;
-    _id?: string;
+  _id: mongoose.Types.ObjectId;
+  name: string;
+  price: number;
+  capacity: number;
+  remaining: number;
 }
 
 export interface IEvent extends Document {
-    name: string;
-    sections: ISection[];
-    createdBy: mongoose.Types.ObjectId; 
-    isDeleted: boolean;
+  name: string;
+  sections: ISection[];
+  createdBy: mongoose.Types.ObjectId;
+  isDeleted: boolean;
 }
 
-const eventSchema = new Schema<IEvent>({
+const sectionSchema = new Schema<ISection>(
+  {
     name: {
-        type: String,
-        required: true,
-        trim: true
+      type: String,
+      required: true,
+      trim: true
     },
-    sections: [{
-        name: { type: String, required: true },
-        price: { type: Number, required: true },
-        capacity: { type: Number, required: true }
-    }],
+    price: {
+      type: Number,
+      required: true,
+      min: 0
+    },
+    capacity: {
+      type: Number,
+      required: true,
+      min: 1
+    },
+    remaining: {
+      type: Number,
+      required: true,
+      min: 0
+    }
+  },
+  { _id: true }
+);
+
+const eventSchema = new Schema<IEvent>(
+  {
+    name: {
+      type: String,
+      required: true,
+      trim: true
+    },
+    sections: {
+      type: [sectionSchema],
+      required: true
+    },
     createdBy: {
-        type: Schema.Types.ObjectId,
-        ref: "User" 
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      required: true
     },
     isDeleted: {
-        type: Boolean,
-        default: false 
+      type: Boolean,
+      default: false
     }
-}, { timestamps: true });
+  },
+  { timestamps: true }
+);
+
 
 const deletedEventSchema = new Schema({
-    originalEventId: { 
-        type: Schema.Types.ObjectId, 
-        required: true 
+    originalEventId: {
+        type: Schema.Types.ObjectId,
+        required: true
     },
-    deletedBy: { 
-        type: Schema.Types.ObjectId, 
-        ref: "User" 
+    deletedBy: {
+        type: Schema.Types.ObjectId,
+        ref: "User"
     },
-    originalData: { 
-        type: Object, 
-        required: true 
+    originalData: {
+        type: Object,
+        required: true
     },
-    deletedAt: { 
-        type: Date, 
-        default: Date.now 
+    deletedAt: {
+        type: Date,
+        default: Date.now
     }
 });
+
+
+eventSchema.index({ "sections._id": 1 });
 
 export const eventModel = mongoose.model<IEvent>("Event", eventSchema);
 export const deletedEventModel = mongoose.model("DeletedEvent", deletedEventSchema);
