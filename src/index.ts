@@ -5,7 +5,8 @@ import express from "express";
 
 import cors from "cors";
 import authRouter  from "./routes/authRouter.js";
-import eventRouter from "./routes/eventRouter.js";
+import eventRouter from "./routes/admin/eventRouter.js";
+import genericEventRouter from "./routes/genericEventRouter.js";
 import { connectDB } from "./config/db.js";
 
 dotenv.config();
@@ -23,7 +24,8 @@ app.use('/v1/auth', authRouter);
 
 // Admin Router for create event
 app.use('/v1/admin', eventRouter);
-
+//  -----------
+app.use('/v1/event', genericEventRouter);
 
 const startServer = async () => {
 
