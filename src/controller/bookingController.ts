@@ -8,19 +8,15 @@ export const createBookingController = async (req: Request, res: Response) => {
     const session = await mongoose.startSession();
 
     try {
-
         session.startTransaction();
 
         const userId = req.id;
-
         const { eventId, sectionId, quantity, idempotencyKey } = req.body;
-
         const qty = Number(quantity);
 
         if (!eventId || !sectionId || !qty || qty <= 0 || !idempotencyKey) {
-            return res.status(400).json({
-                message: "All fields are required"
-            });
+            await session.abortTransaction();
+            return res.status(400).json({ message: "All fields are required" });
         }
 
         const existingBooking = await bookingModel.findOne(
@@ -30,7 +26,7 @@ export const createBookingController = async (req: Request, res: Response) => {
         );
 
         if (existingBooking) {
-            await session.commitTransaction();
+            await session.abortTransaction();
             return res.status(200).json({
                 message: "Booking already processed",
                 booking: existingBooking
@@ -41,29 +37,27 @@ export const createBookingController = async (req: Request, res: Response) => {
             {
                 _id: eventId,
                 "sections._id": sectionId,
-                "sections.remaining": { $gte: quantity }
+                "sections.remaining": { $gte: qty }
             },
             {
-                $inc: { "sections.$.remaining": -quantity }
+                $inc: { "sections.$.remaining": -qty }
             },
             { new: true, session }
         );
 
         if (!updatedEvent) {
-            return res.status(400).json({
-                message: "not enough seats available"
-            });
+            await session.abortTransaction();
+            return res.status(400).json({ message: "not enough seats available" });
         }
 
         const section = updatedEvent.sections.find((s) => s._id?.toString() === sectionId);
 
         if (!section) {
-            return res.status(500).json({
-                message: "Section not found"
-            });
+            await session.abortTransaction();
+            return res.status(500).json({ message: "Section not found" });
         }
 
-        const booking = await bookingModel.create([{
+        const [booking] = await bookingModel.create([{
             userId,
             eventId,
             sectionId,
@@ -72,7 +66,7 @@ export const createBookingController = async (req: Request, res: Response) => {
             idempotencyKey
         }], { session });
 
-        session.commitTransaction();
+        await session.commitTransaction();
 
         return res.status(201).json({
             message: "Booking successful",
@@ -81,9 +75,13 @@ export const createBookingController = async (req: Request, res: Response) => {
 
     } catch (err) {
 
+        await session.abortTransaction();
         return res.status(500).json({
             message: "Internal server Error",
             error: err instanceof Error ? err.message : undefined
         });
+
+    } finally {
+        await session.endSession();
     }
 }
