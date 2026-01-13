@@ -10,6 +10,7 @@ export interface IBooking extends Document {
     quantity: number;
     priceAtBooking: number;
     status: BookingStatus;
+    idempotencyKey: string;
     createdAt: Date;
 } 
 
@@ -41,6 +42,11 @@ const bookingSchema = new Schema<IBooking>({
         type: String,
         enum: Object.values(BookingStatus),
         default: BookingStatus.Booked
+    },
+    idempotencyKey:{
+        type: String,
+        required: true,
+        unique: true
     }
 },{
     timestamps: true
