@@ -1,20 +1,39 @@
 import type { Request, Response } from "express";
 import { eventModel } from "../models/eventModel.js";
 import { bookingModel } from "../models/bookingModel.js";
+import mongoose from "mongoose";
 
 export const createBookingController = async (req: Request, res: Response) => {
 
+    const session = await mongoose.startSession();
+
     try {
+
+        session.startTransaction();
 
         const userId = req.id;
 
-        const { eventId, sectionId, quantity } = req.body;
+        const { eventId, sectionId, quantity, idempotencyKey } = req.body;
 
         const qty = Number(quantity);
 
-        if (!eventId || !sectionId || !qty || qty <= 0) {
+        if (!eventId || !sectionId || !qty || qty <= 0 || !idempotencyKey) {
             return res.status(400).json({
                 message: "All fields are required"
+            });
+        }
+
+        const existingBooking = await bookingModel.findOne(
+            { idempotencyKey },
+            null,
+            { session }
+        );
+
+        if (existingBooking) {
+            await session.commitTransaction();
+            return res.status(200).json({
+                message: "Booking already processed",
+                booking: existingBooking
             });
         }
 
@@ -27,7 +46,7 @@ export const createBookingController = async (req: Request, res: Response) => {
             {
                 $inc: { "sections.$.remaining": -quantity }
             },
-            { new: true }
+            { new: true, session }
         );
 
         if (!updatedEvent) {
@@ -44,13 +63,16 @@ export const createBookingController = async (req: Request, res: Response) => {
             });
         }
 
-        const booking = await bookingModel.create({
+        const booking = await bookingModel.create([{
             userId,
             eventId,
             sectionId,
             quantity: qty,
-            priceAtBooking: section.price
-        });
+            priceAtBooking: section.price,
+            idempotencyKey
+        }], { session });
+
+        session.commitTransaction();
 
         return res.status(201).json({
             message: "Booking successful",
