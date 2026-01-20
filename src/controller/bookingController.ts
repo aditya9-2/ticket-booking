@@ -85,3 +85,67 @@ export const createBookingController = async (req: Request, res: Response) => {
         await session.endSession();
     }
 }
+
+export const getYourBookingController = async (req: Request, res: Response) => {
+
+    try {
+        const userId = req.id;
+
+        const bookings = await bookingModel.aggregate([
+            {
+                $match: {
+                    userId: new mongoose.Types.ObjectId(userId),
+                },
+            },
+            {
+                $lookup: {
+                    from: "events",
+                    localField: "eventId",
+                    foreignField: "_id",
+                    as: "event",
+                },
+            },
+            { $unwind: "$event" },
+            {
+                $addFields: {
+                    section: {
+                        $first: {
+                            $filter: {
+                                input: "$event.sections",
+                                as: "sec",
+                                cond: {
+                                    $eq: ["$$sec._id", "$sectionId"],
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            {
+                $project: {
+                    _id: 1,
+                    eventName: "$event.name",
+                    sectionName: "$section.name",
+                    quantity: 1,
+                    priceAtBooking: 1,
+                    createdAt: 1,
+                },
+            },
+            { $sort: { createdAt: -1 } },
+        ]);
+
+        return res.status(200).json({
+            bookings,
+        });
+
+    } catch (err) {
+
+        return res.status(500).json({
+            message: "Internal server Error",
+            error: err instanceof Error ? err.message : undefined
+        });
+
+
+    }
+
+}
