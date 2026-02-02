@@ -3,6 +3,7 @@ import mongoose, { Schema, Document } from "mongoose";
 interface ISection {
   _id: mongoose.Types.ObjectId;
   name: string;
+  posterUrl?: string;
   price: number;
   capacity: number;
   remaining: number;
@@ -21,6 +22,10 @@ const sectionSchema = new Schema<ISection>(
       type: String,
       required: true,
       trim: true
+    },
+    posterUrl: {
+      type: String,  
+      required: false
     },
     price: {
       type: Number,
