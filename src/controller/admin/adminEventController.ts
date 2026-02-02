@@ -13,7 +13,7 @@ export const createEvenetController = async (req: Request, res: Response) => {
             });
         }
 
-        const { name, posterSectionIndex } = req.body;
+        const { name, date } = req.body;
         let { sections } = req.body;
 
         if (typeof sections === "string") {
@@ -26,21 +26,16 @@ export const createEvenetController = async (req: Request, res: Response) => {
             });
         }
 
+        let posterUrl = "";
         if (req.file) {
-            const index = Number(posterSectionIndex);
-
-            if (isNaN(index) || !sections[index]) {
-                return res.status(400).json({
-                    message: "Invalid posterSectionIndex"
-                });
-            }
-
-            const posterUrl = await uploadToR2(req.file);
-            sections[index].posterUrl = posterUrl;
+            // Upload directly to root
+            posterUrl = await uploadToR2(req.file);
         }
 
         const newEvent = await eventModel.create({
             name,
+            date,
+            posterUrl,
             sections,
             createdBy: req.id
         });
@@ -74,12 +69,10 @@ export const updateEventController = async (req: Request, res: Response) => {
         delete updateData.createdBy;
         delete updateData.createdAt;
 
-        if (req.file && sectionId) {
+        if (req.file) {
             const posterUrl = await uploadToR2(req.file);
-
-            updateData["sections.$[section].posterUrl"] = posterUrl;
+            updateData.posterUrl = posterUrl;
         }
-
 
         const updatedEvent = await eventModel.findByIdAndUpdate(
             eventId,
@@ -88,9 +81,7 @@ export const updateEventController = async (req: Request, res: Response) => {
         ).select("-isDeleted -__v -createdBy");
 
         if (!updatedEvent) {
-            return res.status(404).json({
-                message: "Event not found"
-            });
+            return res.status(404).json({ message: "Event not found" });
         }
 
         return res.status(200).json({

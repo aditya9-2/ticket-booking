@@ -87,9 +87,9 @@ export const createBookingController = async (req: Request, res: Response) => {
 }
 
 export const getYourBookingController = async (req: Request, res: Response) => {
-
     try {
         const userId = req.id;
+        const now = new Date(); // Current timestamp
 
         const bookings = await bookingModel.aggregate([
             {
@@ -106,6 +106,12 @@ export const getYourBookingController = async (req: Request, res: Response) => {
                 },
             },
             { $unwind: "$event" },
+            // --- NEW FILTER STEP ---
+            {
+                $match: {
+                    "event.date": { $gte: now } // Only show bookings for future events
+                }
+            },
             {
                 $addFields: {
                     section: {
@@ -113,9 +119,7 @@ export const getYourBookingController = async (req: Request, res: Response) => {
                             $filter: {
                                 input: "$event.sections",
                                 as: "sec",
-                                cond: {
-                                    $eq: ["$$sec._id", "$sectionId"],
-                                },
+                                cond: { $eq: ["$$sec._id", "$sectionId"] },
                             },
                         },
                     },
@@ -125,27 +129,21 @@ export const getYourBookingController = async (req: Request, res: Response) => {
                 $project: {
                     _id: 1,
                     eventName: "$event.name",
+                    eventDate: "$event.date", // Good to include this for the UI
                     sectionName: "$section.name",
                     quantity: 1,
                     priceAtBooking: 1,
                     createdAt: 1,
                 },
             },
-            { $sort: { createdAt: -1 } },
+            { $sort: { eventDate: 1 } }, // Sort by which event is happening soonest
         ]);
 
-        return res.status(200).json({
-            bookings,
-        });
-
+        return res.status(200).json({ bookings });
     } catch (err) {
-
         return res.status(500).json({
             message: "Internal server Error",
             error: err instanceof Error ? err.message : undefined
         });
-
-
     }
-
 }

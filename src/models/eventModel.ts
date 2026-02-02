@@ -3,7 +3,6 @@ import mongoose, { Schema, Document } from "mongoose";
 interface ISection {
   _id: mongoose.Types.ObjectId;
   name: string;
-  posterUrl?: string;
   price: number;
   capacity: number;
   remaining: number;
@@ -11,6 +10,8 @@ interface ISection {
 
 export interface IEvent extends Document {
   name: string;
+  date: Date;
+  posterUrl?: string;
   sections: ISection[];
   createdBy: mongoose.Types.ObjectId;
   isDeleted: boolean;
@@ -22,10 +23,6 @@ const sectionSchema = new Schema<ISection>(
       type: String,
       required: true,
       trim: true
-    },
-    posterUrl: {
-      type: String,  
-      required: false
     },
     price: {
       type: Number,
@@ -52,6 +49,14 @@ const eventSchema = new Schema<IEvent>(
       type: String,
       required: true,
       trim: true
+    },
+    date: { 
+      type: Date, 
+      required: true 
+    },
+    posterUrl: {
+      type: String,  
+      required: false
     },
     sections: {
       type: [sectionSchema],
@@ -92,6 +97,10 @@ const deletedEventSchema = new Schema({
 
 
 eventSchema.index({ "sections._id": 1 });
+// For the Home Page: Show only future events, sorted by date
+eventSchema.index({ isDeleted: 1, date: 1 });
+// For searching events by name (Case-insensitive search)
+eventSchema.index({ name: "text" });
 
 export const eventModel = mongoose.model<IEvent>("Event", eventSchema);
 export const deletedEventModel = mongoose.model("DeletedEvent", deletedEventSchema);
