@@ -1,0 +1,34 @@
+name: CI Pileline
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master, main, develop ]
+      
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+     - uses: actions/checkout@v2
+     - name: Install Dependencies
+       run: npm install
+
+     - name: Build project
+       run: npm run build
+     
+     - name: Docker login
+       uses: docker/login-actions@v2
+       with: 
+        username: { secrets.DOCKERHUB_USERNAME }
+        password: { secrets.DOCKERHUB_PASSWORD }
+
+     - name: Build Image
+       run: docker build -t aditya527/ticket-booking:${{ github.sha }} .
+     
+     - name: Docker push 
+       run: docker push aditya527/ticket-booking:${{ github.sha }}
+
+
+
+     
+
