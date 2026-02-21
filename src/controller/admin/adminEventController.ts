@@ -55,23 +55,23 @@ export const createEvenetController = async (req: Request, res: Response) => {
 
 export const updateEventController = async (req: Request, res: Response) => {
     try {
-
         if (req.roleId !== RoleId.Admin) {
             return res.status(403).json({ message: "Forbidden" });
         }
 
         const eventId = req.params.id;
-        const {sectionId, ...updateData} = req.body;
+        let updateData = { ...req.body };
 
-        // 1. Filter out fields we don't want them to update manually
-        // e.g., don't let them update 'createdBy' or '_id'
+        if (updateData.sections && typeof updateData.sections === "string") {
+            updateData.sections = JSON.parse(updateData.sections);
+        }
+
+        // Cleanup
         delete updateData._id;
         delete updateData.createdBy;
-        delete updateData.createdAt;
 
         if (req.file) {
-            const posterUrl = await uploadToR2(req.file);
-            updateData.posterUrl = posterUrl;
+            updateData.posterUrl = await uploadToR2(req.file);
         }
 
         const updatedEvent = await eventModel.findByIdAndUpdate(
@@ -80,9 +80,7 @@ export const updateEventController = async (req: Request, res: Response) => {
             { new: true, runValidators: true }
         ).select("-isDeleted -__v -createdBy");
 
-        if (!updatedEvent) {
-            return res.status(404).json({ message: "Event not found" });
-        }
+        if (!updatedEvent) return res.status(404).json({ message: "Event not found" });
 
         return res.status(200).json({
             message: "Event updated successfully",
