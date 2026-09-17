@@ -12,7 +12,6 @@ const CONFIG = {
     REQUESTS: 150,
     QTY_PER_REQUEST: 1
 };
-// ─────────────────────────────────────────────────────────────
 
 interface BookingResult {
     success: boolean;
