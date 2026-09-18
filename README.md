@@ -1,69 +1,99 @@
 # Ticket Booking System API
 
+A backend REST API for a ticket-booking system designed to handle concurrent booking requests safely. The system uses **MongoDB transactions, atomic updates, and idempotency keys** to maintain booking consistency and prevent ticket overselling during concurrent requests and network retries.
+
 ## Overview
 
-This is a backend REST API designed to handle high-concurrency ticket booking operations. The system implements ACID transactions to prevent race conditions (overselling) and utilizes idempotency keys to ensure transaction safety during network failures or duplicate requests.
+### Key Features
+
+* RESTful API built with Node.js and TypeScript
+* JWT-based authentication and role-based authorization
+* MongoDB transactions (`session.withTransaction()`) with automatic retry on write conflicts, using a replica set
+* Atomic ticket inventory updates — correctly returns `409 Conflict` (not `500`) when seats are unavailable
+* Idempotent booking requests using idempotency keys, enforced via a unique index with `E11000` duplicate-key handling
+* Admin event management
+* Booking history and retrieval APIs
+* Dockerized development environment (3-container Compose stack: `mongo`, `mongo-init`, `api`)
+* Concurrent booking stress test to verify transaction integrity, with measured results below
+* CI pipeline (GitHub Actions) for automated build and image publishing
 
 ## Architecture
 
-- **Runtime:** Node.js (TypeScript)
-- **Database:** MongoDB (Replica Set Configuration)
-- **Containerization:** Docker & Docker Compose
+* **Runtime:** Node.js + TypeScript
+* **Database:** MongoDB with Replica Set (`rs0`)
+* **Authentication:** JWT
+* **Containerization:** Docker + Docker Compose
 
-### Why Docker Compose?
+### Why MongoDB Replica Set?
 
-This project requires a MongoDB Replica Set (`rs0`) to support multi-document transactions (ACID). Standard local MongoDB installations often run as standalone instances, which do not support transaction sessions.
+MongoDB multi-document transactions require a replica set or sharded cluster. Therefore, this project runs MongoDB as a single-node replica set (`rs0`) through Docker Compose.
 
-We utilize Docker Compose to orchestrate three services:
+Docker Compose orchestrates three services:
 
-1. **mongo:** The database container running with the `--replSet` flag.
-2. **mongo-init:** A transient sidecar container that waits for the database to be healthy and automatically initializes the replica set.
-3. **api:** The Node.js application.
+1. **mongo** — MongoDB instance started with replica-set support.
+2. **mongo-init** — Initializes the `rs0` replica set after MongoDB becomes available.
+3. **api** — Node.js/TypeScript REST API.
 
-Using `npm run build` and `npm run start` locally without this Docker configuration will result in transaction errors unless a local replica set is manually configured.
+This allows the booking workflow to use MongoDB transactions locally without requiring a manually configured MongoDB replica set.
+
+A cold start of the full stack (`docker compose down -v` → all containers healthy via `docker compose up -d --wait`) takes **~7.5s**.
 
 ## Prerequisites
 
-- Docker Desktop or Docker Engine + Docker Compose installed and running.
-- Node.js (LTS) and npm (for local test scripts).
+* Docker Engine/Desktop
+* Docker Compose
+* Node.js LTS and npm (required for local scripts)
 
 ## Installation & Configuration
 
 ### 1. Clone the Repository
 
-```
+```bash
 git clone https://github.com/aditya9-2/ticket-booking.git
 cd ticket-booking
 ```
-## 2. Environment Configuration
 
-Create a `.env` file in the root directory:
-```bash
+### 2. Environment Configuration
+
+Create a `.env` file in the project root:
+
+```env
 PORT=3000
-# Internal Docker URI for the container
 MONGO_URI=mongodb://mongo:27017/ticket-booking?replicaSet=rs0
-# JWT Secret for authentication
 JWT_TOKEN=your_secure_secret_key_here
 ```
 
-## Deployment
+> The MongoDB hostname `mongo` is resolved through the Docker Compose network.
 
-Build and start the system using Docker Compose:
-```
+## Run Locally with Docker Compose
+
+Start the API and MongoDB replica set:
+
+```bash
 docker compose up -d --build
 ```
 
-Wait approximately 10–15 seconds for the mongo-init service to complete the replica set initialization. Verify running containers with:
-```
+Verify that the containers are running:
+
+```bash
 docker ps
 ```
 
-***Note:*** This Docker setup handles both API and MongoDB replica set initialization. Running npm run build locally without this configuration may lead to transaction errors due to lack of replica set support.
+The `mongo-init` service initializes the MongoDB replica set automatically.
 
+> Running the API directly with `npm run build` / `npm run start` requires a MongoDB instance configured as a replica set. Otherwise, transaction-based booking operations will fail.
 
-## API Usage Guide
-1. User Registration (Signup)
+# API Usage
+
+All authenticated endpoints require:
+
+```http
+Authorization: Bearer <JWT_TOKEN>
 ```
+
+## 1. User Registration
+
+```bash
 curl -X POST http://localhost:3000/v1/auth/signup \
 -H "Content-Type: application/json" \
 -d '{
@@ -73,31 +103,34 @@ curl -X POST http://localhost:3000/v1/auth/signup \
 }'
 ```
 
-By default, users are created with `roleId = 2` (regular user).
-To create an Admin, include `"roleId": 1` in the request body.
+New users are assigned the default user role.
 
+> Administrative users should be provisioned through a controlled administrative mechanism rather than allowing arbitrary role assignment through public registration.
 
-## 2. User Authentication (Signin)
-```
+## 2. User Authentication
+
+```bash
 curl -X POST http://localhost:3000/v1/auth/signin \
 -H "Content-Type: application/json" \
 -d '{
     "email": "user@user.com",
     "password": "123123"
 }'
+```
 
-```
-The response contains a JWT token:
-```
+The response contains a JWT:
+
+```json
 {
     "token": "your_jwt_token_here"
 }
 ```
 
-Save this token for authenticated requests.
+Save the token for subsequent authenticated requests.
 
- ## 3. Create Event (Admin Only)
-```
+## 3. Create Event — Admin Only
+
+```bash
 curl -X POST http://localhost:3000/v1/admin/create-event \
 -H "Authorization: Bearer $TOKEN" \
 -H "Content-Type: application/json" \
@@ -119,10 +152,12 @@ curl -X POST http://localhost:3000/v1/admin/create-event \
     ]
 }'
 ```
-Replace $TOKEN with the JWT obtained from the Admin signin response.
 
-## 4. Booking Tickets (User)
-```
+Replace `$TOKEN` with a JWT belonging to an authorized administrator.
+
+## 4. Book Tickets
+
+```bash
 curl -X POST http://localhost:3000/v1/tickets/book \
 -H "Authorization: Bearer $TOKEN" \
 -H "Content-Type: application/json" \
@@ -132,70 +167,70 @@ curl -X POST http://localhost:3000/v1/tickets/book \
     "quantity": 2,
     "idempotencyKey": "unique_key_123"
 }'
-
 ```
-`idempotencyKey` ensures that repeated requests due to network issues or retries do not result in duplicate bookings.
 
+The `idempotencyKey` allows clients to safely retry a booking request without unintentionally creating duplicate bookings. Retrying with the same key returns the original booking response (`200`) instead of creating a second one.
 
-## 5. Retrieve Events
-```
-curl -X GET http://localhost:3000/v1/event/all
+## 5. Retrieve All Events
+
+```bash
+curl -X GET http://localhost:3000/v1/event/all \
 -H "Authorization: Bearer $TOKEN"
 ```
 
-This endpoint returns a list of all events, including their sections and prices.
+Returns available events along with their sections and pricing information.
 
-## 6. Retrieve Single Event
-```
-curl -X GET http://localhost:3000/v1/event/<event_id>
+## 6. Retrieve a Single Event
+
+```bash
+curl -X GET http://localhost:3000/v1/event/<event_id> \
 -H "Authorization: Bearer $TOKEN"
 ```
 
-Replace `<event_id>` with the actual event ID. This returns detailed information for a single event.
+Returns details for the specified event.
 
+## 7. Retrieve All Bookings — Admin Only
 
-## 7. Retrieve All Bookings (Admin Only)
-```
-curl -X GET http://localhost:3000/v1/admin/all-bookings
+```bash
+curl -X GET http://localhost:3000/v1/admin/all-bookings \
 -H "Authorization: Bearer $TOKEN"
 ```
 
-This endpoint returns all bookings in the system, including user information and the event details. Only accessible by Admin users.
+Returns booking information available to authorized administrators.
 
+## 8. Update Event — Admin Only
 
-## 8. Update Event (Admin Only)
-```
+```bash
 curl -X PUT http://localhost:3000/v1/admin/update-event/<event_id> \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
+-H "Authorization: Bearer $TOKEN" \
+-H "Content-Type: application/json" \
+-d '{
     "name": "Updated Event Name",
     "sections": [
-      {
-        "name": "VIP",
-        "price": 120,
-        "capacity": 25,
-        "remaining": 25
-      }
+        {
+            "name": "VIP",
+            "price": 120,
+            "capacity": 25,
+            "remaining": 25
+        }
     ]
-  }'
+}'
 ```
 
+## 9. Delete Event — Admin Only
 
-## 9. Delete Event (Admin Only)
-```
-curl -X DELETE http://localhost:3000/v1/admin/delete-event/<event_id>
+```bash
+curl -X DELETE http://localhost:3000/v1/admin/delete-event/<event_id> \
 -H "Authorization: Bearer $TOKEN"
 ```
-This deletes the event and archives the original data. Only Admins can perform this action.
 
-## 10. Concurrency & Stress Test for Ticket Booking
+Deletes the event and archives the original data.
 
-This project includes a TypeScript test script to validate high-concurrency bookings and ensure ACID transactions prevent overselling.
+# Concurrency & Stress Testing
 
-### Test Script Configuration
+The project includes a TypeScript-based concurrency test (`tests/bookingConcurrencyTest.ts`, compiled with `tsc`, target ES2022 / NodeNext modules) to validate booking behavior when multiple requests attempt to reserve tickets simultaneously. A single `CONFIG` block controls the mode, target event/section, and request count.
 
-Edit `tests/bookingConcurrencyTest.ts` to set your test parameters:
+### Test Configuration
 
 ```ts
 const CONFIG = {
@@ -207,68 +242,69 @@ const CONFIG = {
     QTY_PER_REQUEST: 5
 };
 ```
-`TOTAL_REQUESTS:` Number of concurrent booking requests.
 
-`QTY_PER_REQUEST:` Number of tickets to book per request.
+* `TOTAL_REQUESTS` — Number of concurrent booking requests.
+* `QTY_PER_REQUEST` — Number of tickets requested per request.
+* `TOKEN` — Authentication token.
+* `EVENT_ID` — Target event.
+* `SECTION_ID` — Target ticket section.
 
-`TOKEN,` `EVENT_ID, `SECTION_ID:` Replace with actual values.
+### Run the Test
 
-## Run the Concurrency Test
-
-```
-npx ts-node --project ./tsconfig.tests.json tests/bookingConcurrencyTest.ts
-
-```
-
-
-## Expected Output
-
-The script will output:
-
-1. Initial remaining seats.
-
-2. Request results for each booking attempt (SUCCESS or FAILED).
-
-3. Final remaining seats and verification against expected value.
-
-4. Pass/Fail status for ACID transaction integrity.
-
-### Sample output:
-
-```yaml
-[Info] Starting concurrency test with 10 requests...
-[State] Initial remaining seats: 50
-
-[Results] Request Summary:
-  Req 1: SUCCESS (201) - Booking successful
-  Req 2: SUCCESS (201) - Booking successful
-  Req 3: FAILED (400) - not enough seats available
-  ...
-
-[Verification] Database Integrity Check:
-  Start Seats: 50
-  Sold Seats:  20
-  End Seats:   30
-  Expected:    30
-
-[Pass] ACID transaction logic verified. No race conditions detected.
-
+```bash
+npm run test:concurrency
 ```
 
-This ensures that multiple users booking tickets simultaneously will not oversell any section.
+### What the Test Verifies
 
-### ***Notes***
+The test reports:
 
-- All authenticated endpoints require the `Authorization: Bearer $TOKEN` header.
+1. Initial ticket availability.
+2. Result of each concurrent booking request.
+3. Final remaining ticket count.
+4. Expected versus actual inventory.
+5. Transaction integrity status.
 
-- Always use unique `idempotencyKey` values for ticket bookings to prevent duplicate processing.
+When demand exceeds available inventory, only requests that can be fulfilled should succeed, while unsuccessful transactions should leave the ticket inventory consistent.
 
-- **Docker Compose initializes both the API and MongoDB replica set automatically. Avoid manual DB setup unless necessary.**
+### Measured Results
 
-- The provided concurrency test validates that your booking system maintains transactional integrity under load.
+**Overselling test** — 150 concurrent requests (qty 1 each) against a section with 89 remaining seats:
 
-## Screenshot
+```text
+Booked (201):    89
+Rejected (409):  61
+Server errors:   0
+End seats:       0   (exact match to expected)
+Duration:        16,199ms (~16.2s)
+```
 
-After running the stress/concurrency test, capture the terminal output showing bookings and remaining seats to include in documentation or for verification purposes.
+**Idempotency test** — 150 concurrent requests using one identical idempotency key, against a section with 100 remaining seats:
+
+```text
+Booked (201):              1
+Already-processed (200):   149
+Server errors:              0
+End seats:                  99  (exact match to expected)
+Duration:                   592ms
+```
+
+Both runs completed with **zero server errors** — the original controller (before the transaction/retry fix) returned `500` on 8 of 10 requests under the same conditions.
+
+## Concurrency Test Screenshot
+
+The following screenshot shows the output of the concurrent booking test, including booking results and the final inventory verification.
 
 ![Concurrency Test Output](output.png)
+
+## Continuous Integration
+
+A GitHub Actions workflow (`build-and-test`) runs on push: checkout → `npm install` → `npm run build` → Docker login → Docker build → Docker push. Total job runtime is **~37s**. This is currently a build/publish pipeline — it does not yet run the concurrency test suite as a merge gate.
+
+## Notes
+
+* Authenticated endpoints require a valid JWT.
+* Use a unique `idempotencyKey` for each logical booking operation.
+* Docker Compose automatically configures the MongoDB replica set required by transaction-based booking operations.
+* The concurrency test can be used to validate booking consistency under simultaneous requests; see measured results above.
+* The JWT test token is currently hardcoded in `tests/bookingConcurrencyTest.ts` rather than pulled from an env var — fine for local stress testing, but swap it out before using the script anywhere shared.
