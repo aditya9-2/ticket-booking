@@ -10,7 +10,7 @@ import eventRouter from "./routes/admin/eventRouter.js";
 import genericEventRouter from "./routes/genericEventRouter.js";
 import bookingRouter from "./routes/bookingRouter.js";
 import adminBookingRouter from "./routes/admin/adminBookingRouter.js";
-
+import aiRouter from "./routes/aiRoutes.js";
 import { connectDB } from "./config/db.js";
 
 dotenv.config();
@@ -35,6 +35,9 @@ app.use('/v1/bookings', bookingRouter);
 // Admin Router for see all the bookings
 app.use('/v1/admin', adminBookingRouter)
 //  -----------------
+
+// AI
+app.use('/v1/ai', aiRouter)
 
 const startServer = async () => {
 
