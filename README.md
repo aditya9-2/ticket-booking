@@ -1,6 +1,6 @@
 # Ticket Booking System API
 
-A backend REST API for a ticket-booking system designed to handle concurrent booking requests safely. The system uses **MongoDB transactions, atomic updates, and idempotency keys** to maintain booking consistency and prevent ticket overselling during concurrent requests and network retries.
+A backend REST API for a ticket-booking system designed to handle concurrent booking requests safely. The system uses **MongoDB transactions, atomic updates, and idempotency keys** to maintain booking consistency and prevent ticket overselling during concurrent requests and network retries. It also includes an **AI Booking Assistant** that lets users search events, check availability, and book tickets through natural conversation, backed by tool calling over the same transactional booking logic.
 
 ## Overview
 
@@ -11,6 +11,7 @@ A backend REST API for a ticket-booking system designed to handle concurrent boo
 * MongoDB transactions (`session.withTransaction()`) with automatic retry on write conflicts, using a replica set
 * Atomic ticket inventory updates — correctly returns `409 Conflict` (not `500`) when seats are unavailable
 * Idempotent booking requests using idempotency keys, enforced via a unique index with `E11000` duplicate-key handling
+* **AI Booking Assistant** — a conversational agent (OpenRouter, OpenAI-compatible tool calling) that can search events, fetch event details, check section availability, list a user's bookings, and create a booking, with all business rules (auth, pricing, inventory, transactions, idempotency) still enforced server-side, not by the LLM
 * Admin event management
 * Booking history and retrieval APIs
 * Dockerized development environment (3-container Compose stack: `mongo`, `mongo-init`, `api`)
@@ -23,6 +24,7 @@ A backend REST API for a ticket-booking system designed to handle concurrent boo
 * **Database:** MongoDB with Replica Set (`rs0`)
 * **Authentication:** JWT
 * **Containerization:** Docker + Docker Compose
+* **AI Layer:** OpenRouter (OpenAI SDK, OpenAI-compatible API) for LLM access + tool calling
 
 ### Why MongoDB Replica Set?
 
@@ -38,11 +40,54 @@ This allows the booking workflow to use MongoDB transactions locally without req
 
 A cold start of the full stack (`docker compose down -v` → all containers healthy via `docker compose up -d --wait`) takes **~7.5s**.
 
+### AI Booking Assistant
+
+The AI assistant sits in front of the existing booking system as a conversational interface — it never touches MongoDB directly and never decides whether a booking is valid. It orchestrates a conversation, calls tools, and the existing transactional booking logic remains the single source of truth.
+
+```
+User
+  │
+  ▼
+AI Assistant (OpenRouter LLM, tool calling)
+  │
+  ├── searchEvents          → eventService → MongoDB
+  ├── getEventDetails        → eventService → MongoDB
+  ├── checkAvailability      → eventService → MongoDB
+  ├── getMyBookings          → bookingService → MongoDB
+  └── createBooking          → bookingService (transaction + idempotency) → MongoDB
+```
+
+Booking flow enforced by the system prompt and the tool contract:
+
+```
+User asks to book
+     ↓
+AI checks availability (checkAvailability)
+     ↓
+AI shows event, section, quantity, total price
+     ↓
+Explicit user confirmation required
+     ↓
+AI calls createBooking
+     ↓
+Existing transactional booking logic (session.withTransaction, atomic inventory update)
+     ↓
+MongoDB
+```
+
+Key safety properties of the AI layer:
+
+* The AI never invents events, prices, availability, or booking results — tool output is the only source of truth.
+* `createBooking` is only ever called after the user has explicitly confirmed the event, section, quantity, and price.
+* The authenticated `userId` and the booking's `idempotencyKey` are **never** supplied by the LLM — both are injected server-side from the JWT and generated with `crypto.randomUUID()` respectively, so the model cannot forge either.
+* All five tools call the same `eventService` / `bookingService` layer used by the plain REST controllers, so there is one code path for booking logic regardless of whether it was triggered by a human via `POST /v1/bookings/create-booking` or by the AI via `POST /v1/ai/chat`.
+
 ## Prerequisites
 
 * Docker Engine/Desktop
 * Docker Compose
 * Node.js LTS and npm (required for local scripts)
+* An [OpenRouter](https://openrouter.ai) API key (required for the AI assistant)
 
 ## Installation & Configuration
 
@@ -61,9 +106,11 @@ Create a `.env` file in the project root:
 PORT=3000
 MONGO_URI=mongodb://mongo:27017/ticket-booking?replicaSet=rs0
 JWT_TOKEN=your_secure_secret_key_here
+OPENROUTER_API_KEY=your_openrouter_api_key_here
 ```
 
 > The MongoDB hostname `mongo` is resolved through the Docker Compose network.
+> `OPENROUTER_API_KEY` is required for the `/v1/ai/chat` endpoint. Without it, all other endpoints still work normally.
 
 ## Run Locally with Docker Compose
 
@@ -226,6 +273,56 @@ curl -X DELETE http://localhost:3000/v1/admin/delete-event/<event_id> \
 
 Deletes the event and archives the original data.
 
+## 10. AI Booking Assistant
+
+```bash
+curl -X POST http://localhost:3000/v1/ai/chat \
+-H "Authorization: Bearer $TOKEN" \
+-H "Content-Type: application/json" \
+-d '{
+    "message": "Find me a comedy event under 800"
+}'
+```
+
+Response:
+
+```json
+{
+    "reply": "I found two comedy events: Comedy Live (₹750) and Open Mic Comedy Jam (₹299). Would you like details about either one?"
+}
+```
+
+The assistant maintains a per-user conversation, so follow-up messages carry context from earlier turns in the same session:
+
+```bash
+curl -X POST http://localhost:3000/v1/ai/chat \
+-H "Authorization: Bearer $TOKEN" \
+-H "Content-Type: application/json" \
+-d '{ "message": "Tell me more about Comedy Live" }'
+
+curl -X POST http://localhost:3000/v1/ai/chat \
+-H "Authorization: Bearer $TOKEN" \
+-H "Content-Type: application/json" \
+-d '{ "message": "Are 2 tickets available in the General section?" }'
+
+curl -X POST http://localhost:3000/v1/ai/chat \
+-H "Authorization: Bearer $TOKEN" \
+-H "Content-Type: application/json" \
+-d '{ "message": "Yes, book 2 tickets" }'
+```
+
+Available tools the assistant can call:
+
+| Tool | Purpose | Notes |
+|---|---|---|
+| `searchEvents` | Search upcoming events by keyword and/or max price | Read-only |
+| `getEventDetails` | Get full details for one event, including sections | Read-only |
+| `checkAvailability` | Check if N tickets are available in a section | Read-only |
+| `getMyBookings` | List the authenticated user's upcoming bookings | `userId` injected server-side |
+| `createBooking` | Create a booking | Requires explicit user confirmation; `userId` and `idempotencyKey` injected server-side, never supplied by the model |
+
+> The conversation store is currently in-memory, keyed by user ID — fine for local testing, but it resets on server restart and won't scale across multiple instances. Swap for Redis or a DB-backed store before production use.
+
 # Concurrency & Stress Testing
 
 The project includes a TypeScript-based concurrency test (`tests/bookingConcurrencyTest.ts`, compiled with `tsc`, target ES2022 / NodeNext modules) to validate booking behavior when multiple requests attempt to reserve tickets simultaneously. A single `CONFIG` block controls the mode, target event/section, and request count.
@@ -308,3 +405,4 @@ A GitHub Actions workflow (`build-and-test`) runs on push: checkout → `npm ins
 * Docker Compose automatically configures the MongoDB replica set required by transaction-based booking operations.
 * The concurrency test can be used to validate booking consistency under simultaneous requests; see measured results above.
 * The JWT test token is currently hardcoded in `tests/bookingConcurrencyTest.ts` rather than pulled from an env var — fine for local stress testing, but swap it out before using the script anywhere shared.
+* The AI assistant requires `OPENROUTER_API_KEY` to be set; verify your chosen OpenRouter model supports tool/function calling before relying on it — not all free-tier models do.
