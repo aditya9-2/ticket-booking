@@ -1,14 +1,18 @@
 import type { Request, Response } from "express";
 import { eventModel } from "../models/eventModel.js";
+import { getAllEvents, getEventById } from "../services/eventServices.js";
 
 export const seeAllEvenetsController = async (req: Request, res: Response) => {
 
     try {
 
-        const events = await eventModel
-            .find({ isDeleted: false })
-            .select("-__v -createdBy")
-            .sort({ date: 1 });
+        // const events = await eventModel
+        //     .find({ isDeleted: false })
+        //     .select("-__v -createdBy")
+        //     .sort({ date: 1 });
+
+        const events = await getAllEvents();
+
 
         if (events.length === 0) {
             return res.status(200).json({
@@ -45,10 +49,12 @@ export const getEventController = async (req: Request, res: Response) => {
             });
         }
 
-        const event = await eventModel.findOne({
-            _id: eventId,
-            isDeleted: false 
-        }).select("-__v -createdBy");
+        // const event = await eventModel.findOne({
+        //     _id: eventId,
+        //     isDeleted: false 
+        // }).select("-__v -createdBy");
+
+        const event = await getEventById(eventId);
 
         if (!event) {
             return res.status(404).json({
