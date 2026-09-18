@@ -16,3 +16,29 @@ export const getEventById = async (eventId: string | string[]) => {
         })
         .select("-__v -createdBy");
 };
+
+
+export const checkSectionAvailability = async (
+    eventId: string,
+    sectionId: string,
+    quantity: number
+) => {
+    const event = await eventModel.findOne({ _id: eventId, isDeleted: false });
+
+    if (!event) {
+        return { available: false, reason: "Event not found" };
+    }
+
+    const section = event.sections.find((s) => s._id?.toString() === sectionId);
+
+    if (!section) {
+        return { available: false, reason: "Section not found" };
+    }
+
+    return {
+        available: section.remaining >= quantity,
+        remaining: section.remaining,
+        price: section.price,
+        sectionName: section.name,
+    };
+};
