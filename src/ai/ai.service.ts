@@ -6,6 +6,7 @@ import { getEventDetails } from "./tools/get-event-details.tool.js"
 import { checkAvailability } from "./tools/check-availability.tool.js"
 import { getMyBookings } from "./tools/get-my-bookings.tool.js"
 import { createBookingTool } from "./tools/create-booking.tool.js"
+import { redis } from "../config/redis.js"
 
 interface ToolContext {
     userId: string
@@ -22,9 +23,33 @@ const plainTools: Record<string, (args: any) => Promise<any>> = {
     checkAvailability,
 }
 
-// TODO: use Redis
-const conversations = new Map<string, any[]>()
 const MAX_TOOL_ROUNDS = 5
+const TTL_SECONDS = Number(process.env.CHAT_HISTORY_TTL_SECONDS) || 172800
+
+const conversationKey = (userId: string) => `chat:history:${userId}`
+
+const getHistory = async (userId: string): Promise<any[]> => {
+    const raw = await redis.get(conversationKey(userId))
+    if (raw) return JSON.parse(raw)
+    return [{ role: "system", content: SYSTEM_PROMPT }]
+}
+
+const saveHistory = async (userId: string, history: any[]) => {
+    // Refresh TTL on every write — an active conversation keeps sliding its
+    // expiry forward; an abandoned one still expires ~48h after the last message
+    await redis.set(conversationKey(userId), JSON.stringify(history), "EX", TTL_SECONDS)
+}
+
+// Public getter for the frontend to rehydrate chat UI on load.
+// Strips system + tool-call plumbing — only user/assistant turns are
+// meaningful to render as chat bubbles.
+export const getConversationHistory = async (userId: string) => {
+    const history = await getHistory(userId)
+    return history
+        .filter((m: any) => m.role === "user" || m.role === "assistant")
+        .filter((m: any) => typeof m.content === "string" && m.content.length > 0)
+        .map((m: any) => ({ role: m.role, content: m.content }))
+}
 
 export const askAIStream = async (
     userId: string,
@@ -32,14 +57,14 @@ export const askAIStream = async (
     onToken: (token: string) => void,
     onToolResults: (results: { name: string; result: any }[]) => void
 ) => {
-    const history = conversations.get(userId) ?? [{ role: "system", content: SYSTEM_PROMPT }]
+    const history = await getHistory(userId)
     history.push({ role: "user", content: userMessage })
 
     let rounds = 0
     const toolResults: { name: string; result: any }[] = []
 
     while (rounds < MAX_TOOL_ROUNDS) {
-        
+
         const probe = await aiClient.chat.completions.create({
             model: "openrouter/free",
             messages: history,
@@ -49,7 +74,7 @@ export const askAIStream = async (
 
         const choice = probe.choices[0]
         if (!choice) {
-            conversations.set(userId, history)
+            await saveHistory(userId, history)
             onToken("I didn't get a response — please try again.")
             onToolResults(toolResults)
             return
@@ -57,7 +82,6 @@ export const askAIStream = async (
 
         const message = choice.message
 
-        
         if (!message.tool_calls?.length) {
             const streamRes = await aiClient.chat.completions.create({
                 model: "openrouter/free",
@@ -77,7 +101,7 @@ export const askAIStream = async (
             }
 
             history.push({ role: "assistant", content: fullContent })
-            conversations.set(userId, history)
+            await saveHistory(userId, history)
             onToolResults(toolResults)
             return
         }
@@ -130,7 +154,7 @@ export const askAIStream = async (
         rounds++
     }
 
-    conversations.set(userId, history)
+    await saveHistory(userId, history)
     onToken("I wasn't able to finish that request — could you rephrase or try again?")
     onToolResults(toolResults)
 }

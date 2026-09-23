@@ -1,5 +1,5 @@
 import type { Request, Response } from "express"
-import { askAIStream } from "../ai/ai.service.js"
+import { askAIStream, getConversationHistory } from "../ai/ai.service.js"
 
 export const chatWithAIController = async (req: Request, res: Response) => {
     try {
@@ -39,5 +39,18 @@ export const chatWithAIController = async (req: Request, res: Response) => {
                 error: err instanceof Error ? err.message : undefined,
             })
         }
+    }
+}
+
+export const getChatHistoryController = async (req: Request, res: Response) => {
+    try {
+        const userId = req.id
+        const history = await getConversationHistory(userId)
+        return res.status(200).json({ history })
+    } catch (err) {
+        return res.status(500).json({
+            message: "Couldn't load chat history",
+            error: err instanceof Error ? err.message : undefined,
+        })
     }
 }
