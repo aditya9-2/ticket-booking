@@ -5,7 +5,7 @@ import express from "express";
 
 import cors from "cors";
 
-import authRouter  from "./routes/authRouter.js";
+import authRouter from "./routes/authRouter.js";
 import eventRouter from "./routes/admin/eventRouter.js";
 import genericEventRouter from "./routes/genericEventRouter.js";
 import bookingRouter from "./routes/bookingRouter.js";
@@ -23,6 +23,9 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
+app.get('/v1/health', (_req, res) => {
+    res.status(200).json({ status: "ok" });
+});
 
 app.use('/v1/auth', authRouter);
 
