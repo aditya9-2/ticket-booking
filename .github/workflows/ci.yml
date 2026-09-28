@@ -1,34 +1,42 @@
-name: CI Pileline
+name: CI Pipeline
+
 on:
   push:
-    branches: [ master ]
+    branches: [master]
   pull_request:
-    branches: [ master, main, develop ]
-      
+    branches: [master, main, develop]
+
 jobs:
-  build-and-test:
+  build:
     runs-on: ubuntu-latest
     steps:
-     - uses: actions/checkout@v2
-     - name: Install Dependencies
-       run: npm install
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
 
-     - name: Build project
-       run: npm run build
-     
-     - name: Docker login
-       uses: docker/login-action@v2
-       with: 
-        username: ${{ secrets.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_PASSWORD }}
-
-     - name: Build Image
-       run: docker build -t aditya527/ticket-booking:${{ github.sha }} .
-     
-     - name: Docker push 
-       run: docker push aditya527/ticket-booking:${{ github.sha }}
-
-
-
-     
-
+  docker:
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            aditya527/ticket-booking:latest
+            aditya527/ticket-booking:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
