@@ -66,6 +66,10 @@ services:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - REDIS_URL=redis://redis:6379
       - CHAT_HISTORY_TTL_SECONDS=${CHAT_HISTORY_TTL_SECONDS}
+      - RAZORPAY_ID_KEY=${RAZORPAY_ID_KEY}
+      - RAZORPAY_SECRET_KEY=${RAZORPAY_SECRET_KEY}
+      - CORS_ORIGIN=https://${SITE_ADDRESS}
+      - NODE_ENV=production
     restart: always
 
 volumes:
