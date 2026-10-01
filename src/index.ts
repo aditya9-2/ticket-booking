@@ -11,6 +11,7 @@ import genericEventRouter from "./routes/genericEventRouter.js";
 import bookingRouter from "./routes/bookingRouter.js";
 import adminBookingRouter from "./routes/admin/adminBookingRouter.js";
 import aiRouter from "./routes/aiRoutes.js";
+import paymentRouter from "./routes/paymentRouter.js";
 import { connectDB } from "./config/db.js";
 
 dotenv.config();
@@ -21,7 +22,25 @@ const app = express();
 
 
 app.use(express.json());
-app.use(cors());
+// app.use(cors());
+const allowedOrigins = (process.env.CORS_ORIGIN || "").split(",").map((o) => o.trim());
+
+app.use(
+    cors({
+        origin: (origin, callback) => {
+            // Allow non-browser tools (no Origin header) only in dev,
+            // never in production
+            if (!origin && process.env.NODE_ENV !== "production") {
+                return callback(null, true);
+            }
+            if (origin && allowedOrigins.includes(origin)) {
+                return callback(null, true);
+            }
+            return callback(new Error("Not allowed by CORS"));
+        },
+        credentials: true,
+    })
+);
 
 app.get('/v1/health', (_req, res) => {
     res.status(200).json({ status: "ok" });
@@ -40,7 +59,10 @@ app.use('/v1/admin', adminBookingRouter)
 //  -----------------
 
 // AI
-app.use('/v1/ai', aiRouter)
+app.use('/v1/ai', aiRouter);
+
+// razorpay
+app.use('/v1/payments', paymentRouter);
 
 const startServer = async () => {
 
