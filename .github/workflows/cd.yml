@@ -10,14 +10,19 @@ jobs:
   deploy:
     if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+
     steps:
       - name: Deploy API over SSH
         env:
           SSH_KEY: ${{ secrets.VM_SSH_KEY }}
           HOST: ${{ secrets.VM_HOST }}
           VM_USER: ${{ secrets.VM_USER }}
+
         run: |
           install -m 600 -D /dev/null ~/.ssh/id_ed25519
-          echo "$SSH_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+
           ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts
-          ssh "$VM_USER@$HOST" "cd ~/booktheshow && docker compose pull api && docker compose up -d api && docker image prune -f"
+
+          ssh "$VM_USER@$HOST" \
+            "cd ~/booktheshow && docker compose pull api && docker compose up -d api && docker image prune -f"
