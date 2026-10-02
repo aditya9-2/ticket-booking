@@ -23,6 +23,12 @@ const app = express();
 
 app.use(express.json());
 // app.use(cors());
+
+
+app.get('/v1/health', (_req, res) => {
+    res.status(200).json({ status: "ok" });
+});
+
 const allowedOrigins = (process.env.CORS_ORIGIN || "").split(",").map((o) => o.trim());
 
 app.use(
@@ -42,9 +48,7 @@ app.use(
     })
 );
 
-app.get('/v1/health', (_req, res) => {
-    res.status(200).json({ status: "ok" });
-});
+
 
 app.use('/v1/auth', authRouter);
 
@@ -63,6 +67,15 @@ app.use('/v1/ai', aiRouter);
 
 // razorpay
 app.use('/v1/payments', paymentRouter);
+
+
+app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    if (err.message === "Not allowed by CORS") {
+        return res.status(403).json({ message: "Origin not allowed" });
+    }
+    console.error(err);
+    return res.status(500).json({ message: "Internal server error" });
+});
 
 const startServer = async () => {
 
