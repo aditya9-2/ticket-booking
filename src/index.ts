@@ -34,12 +34,11 @@ const allowedOrigins = (process.env.CORS_ORIGIN || "").split(",").map((o) => o.t
 app.use(
     cors({
         origin: (origin, callback) => {
-            // Allow non-browser tools (no Origin header) only in dev,
-            // never in production
-            if (!origin && process.env.NODE_ENV !== "production") {
+            if (!origin) {
                 return callback(null, true);
             }
-            if (origin && allowedOrigins.includes(origin)) {
+            // Allow configured cross-origin requests.
+            if (allowedOrigins.includes(origin)) {
                 return callback(null, true);
             }
             return callback(new Error("Not allowed by CORS"));
