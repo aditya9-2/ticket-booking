@@ -1,18 +1,24 @@
 import type { Request, Response } from "express";
-import { eventModel } from "../models/eventModel.js";
 import { getAllEvents, getEventById } from "../services/eventServices.js";
+import { EventCategory } from "../types/category.js";
 
 export const seeAllEvenetsController = async (req: Request, res: Response) => {
 
     try {
 
-        // const events = await eventModel
-        //     .find({ isDeleted: false })
-        //     .select("-__v -createdBy")
-        //     .sort({ date: 1 });
+        const categoryParam = req.query.category as string | undefined;
+        let category: EventCategory | undefined;
 
-        const events = await getAllEvents();
+        if (categoryParam) {
+            if (!Object.values(EventCategory).includes(categoryParam as EventCategory)) {
+                return res.status(400).json({
+                    message: `Invalid category. Must be one of: ${Object.values(EventCategory).join(", ")}`
+                });
+            }
+            category = categoryParam as EventCategory;
+        }
 
+        const events = await getAllEvents(category);
 
         if (events.length === 0) {
             return res.status(200).json({
@@ -25,8 +31,6 @@ export const seeAllEvenetsController = async (req: Request, res: Response) => {
             count: events.length,
             events
         });
-
-
 
     } catch (err) {
 
@@ -48,11 +52,6 @@ export const getEventController = async (req: Request, res: Response) => {
                 message: "Evenet id is required"
             });
         }
-
-        // const event = await eventModel.findOne({
-        //     _id: eventId,
-        //     isDeleted: false 
-        // }).select("-__v -createdBy");
 
         const event = await getEventById(eventId);
 

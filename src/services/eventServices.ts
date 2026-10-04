@@ -1,11 +1,18 @@
 import { eventModel } from "../models/eventModel.js";
+import type { EventCategory } from "../types/category.js";
 
-export const getAllEvents = async () => {
+export const getAllEvents = async (category?: EventCategory) => {
+    const filter: Record<string, any> = {
+        isDeleted: false,
+        date: { $gte: new Date() },
+    };
+
+    if (category) {
+        filter.category = category;
+    }
+
     return eventModel
-        .find({
-            isDeleted: false,
-            date: { $gte: new Date() },
-        })
+        .find(filter)
         .select("-__v -createdBy")
         .sort({ date: 1 });
 };

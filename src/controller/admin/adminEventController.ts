@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { RoleId } from "../../types/roleId.js";
 import { deletedEventModel, eventModel } from "../../models/eventModel.js";
 import { uploadToR2 } from "../../utils/uploadToR2.js";
+import { EventCategory } from "../../types/category.js";
 
 export const createEvenetController = async (req: Request, res: Response) => {
 
@@ -13,22 +14,27 @@ export const createEvenetController = async (req: Request, res: Response) => {
             });
         }
 
-        const { name, date } = req.body;
+        const { name, date, category, venue, location } = req.body;
         let { sections } = req.body;
 
         if (typeof sections === "string") {
             sections = JSON.parse(sections)
         }
 
-        if (!name || !sections || sections.length === 0) {
+        if (!name || !sections || sections.length === 0 || !venue || !location) {
             return res.status(400).json({
-                message: "All fields are required"
+                message: "name, date, venue, location and sections are required"
+            });
+        }
+
+        if (category && !Object.values(EventCategory).includes(category)) {
+            return res.status(400).json({
+                message: `Invalid category. Must be one of: ${Object.values(EventCategory).join(", ")}`
             });
         }
 
         let posterUrl = "";
         if (req.file) {
-            // Upload directly to root
             posterUrl = await uploadToR2(req.file);
         }
 
@@ -36,6 +42,9 @@ export const createEvenetController = async (req: Request, res: Response) => {
             name,
             date,
             posterUrl,
+            category: category || EventCategory.Other,
+            venue,
+            location,
             sections,
             createdBy: req.id
         });
@@ -64,6 +73,12 @@ export const updateEventController = async (req: Request, res: Response) => {
 
         if (updateData.sections && typeof updateData.sections === "string") {
             updateData.sections = JSON.parse(updateData.sections);
+        }
+
+        if (updateData.category && !Object.values(EventCategory).includes(updateData.category)) {
+            return res.status(400).json({
+                message: `Invalid category. Must be one of: ${Object.values(EventCategory).join(", ")}`
+            });
         }
 
         // Cleanup

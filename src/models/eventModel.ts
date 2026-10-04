@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document } from "mongoose";
+import { EventCategory } from "../types/category.js";
 
 interface ISection {
   _id: mongoose.Types.ObjectId;
@@ -12,6 +13,9 @@ export interface IEvent extends Document {
   name: string;
   date: Date;
   posterUrl?: string;
+  category: EventCategory;
+  venue: string;
+  location: string;
   sections: ISection[];
   createdBy: mongoose.Types.ObjectId;
   isDeleted: boolean;
@@ -50,13 +54,29 @@ const eventSchema = new Schema<IEvent>(
       required: true,
       trim: true
     },
-    date: { 
-      type: Date, 
-      required: true 
+    date: {
+      type: Date,
+      required: true
     },
     posterUrl: {
-      type: String,  
+      type: String,
       required: false
+    },
+    category: {
+      type: String,
+      enum: Object.values(EventCategory),
+      default: EventCategory.Other,
+      required: true
+    },
+    venue: {
+      type: String,
+      required: true,
+      trim: true
+    },
+    location: {
+      type: String,
+      required: true,
+      trim: true
     },
     sections: {
       type: [sectionSchema],
@@ -77,28 +97,30 @@ const eventSchema = new Schema<IEvent>(
 
 
 const deletedEventSchema = new Schema({
-    originalEventId: {
-        type: Schema.Types.ObjectId,
-        required: true
-    },
-    deletedBy: {
-        type: Schema.Types.ObjectId,
-        ref: "User"
-    },
-    originalData: {
-        type: Object,
-        required: true
-    },
-    deletedAt: {
-        type: Date,
-        default: Date.now
-    }
+  originalEventId: {
+    type: Schema.Types.ObjectId,
+    required: true
+  },
+  deletedBy: {
+    type: Schema.Types.ObjectId,
+    ref: "User"
+  },
+  originalData: {
+    type: Object,
+    required: true
+  },
+  deletedAt: {
+    type: Date,
+    default: Date.now
+  }
 });
 
 
 eventSchema.index({ "sections._id": 1 });
 // For the Home Page: Show only future events, sorted by date
 eventSchema.index({ isDeleted: 1, date: 1 });
+// For filtering by category on "Browse by mood"
+eventSchema.index({ isDeleted: 1, category: 1, date: 1 });
 // For searching events by name (Case-insensitive search)
 eventSchema.index({ name: "text" });
 
