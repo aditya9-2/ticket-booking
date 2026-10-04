@@ -24,7 +24,8 @@ export const chatWithAIController = async (req: Request, res: Response) => {
             userId,
             message,
             (token) => send("token", { token }),
-            (toolResults) => send("toolResults", { toolResults })
+            (toolResults) => send("toolResults", { toolResults }),
+            (status) => send("status", { status })
         )
 
         send("done", {})
