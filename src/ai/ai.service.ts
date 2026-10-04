@@ -47,7 +47,7 @@ export const getConversationHistory = async (userId: string) => {
     const history = await getHistory(userId)
     return history
         .filter((m: any) => m.role === "user" || m.role === "assistant")
-        .filter((m: any) => typeof m.content === "string" && m.content.length > 0)
+        .filter((m: any) => typeof m.content === "string" && m.content.trim().length > 0)
         .map((m: any) => ({ role: m.role, content: m.content }))
 }
 
@@ -55,7 +55,8 @@ export const askAIStream = async (
     userId: string,
     userMessage: string,
     onToken: (token: string) => void,
-    onToolResults: (results: { name: string; result: any }[]) => void
+    onToolResults: (results: { name: string; result: any }[]) => void,
+    onStatus: (status: string) => void
 ) => {
     const history = await getHistory(userId)
     history.push({ role: "user", content: userMessage })
@@ -64,7 +65,6 @@ export const askAIStream = async (
     const toolResults: { name: string; result: any }[] = []
 
     while (rounds < MAX_TOOL_ROUNDS) {
-
         const probe = await aiClient.chat.completions.create({
             model: "openrouter/free",
             messages: history,
@@ -74,8 +74,10 @@ export const askAIStream = async (
 
         const choice = probe.choices[0]
         if (!choice) {
+            const fallback = "I didn't get a response — please try again."
+            history.push({ role: "assistant", content: fallback })
             await saveHistory(userId, history)
-            onToken("I didn't get a response — please try again.")
+            onToken(fallback)
             onToolResults(toolResults)
             return
         }
@@ -100,6 +102,15 @@ export const askAIStream = async (
                 }
             }
 
+            // Guard against a model returning truly empty content — never
+            // leave the user with no reply at all, and never save an empty
+            // string as a real assistant turn in history
+            if (!fullContent.trim()) {
+                fullContent =
+                    "I'm not sure what you'd like to book yet — could you tell me which event, and how many tickets?"
+                onToken(fullContent)
+            }
+
             history.push({ role: "assistant", content: fullContent })
             await saveHistory(userId, history)
             onToolResults(toolResults)
@@ -120,6 +131,17 @@ export const askAIStream = async (
             }
 
             const name = toolCall.function.name
+
+            // Give the user something to look at while the tool runs
+            const statusText: Record<string, string> = {
+                searchEvents: "Searching events…",
+                getEventDetails: "Looking up event details…",
+                checkAvailability: "Checking availability…",
+                getMyBookings: "Pulling up your bookings…",
+                createBooking: "Booking your tickets…",
+            }
+            onStatus(statusText[name] ?? "Working on it…")
+
             let args: any = {}
             try {
                 args = JSON.parse(toolCall.function.arguments || "{}")
@@ -151,10 +173,15 @@ export const askAIStream = async (
             })
         }
 
+        // Persist after every round, not just at the end — so if something
+        // fails or times out mid-loop, we never lose tool results/booking
+        await saveHistory(userId, history)
         rounds++
     }
 
+    const fallback = "I wasn't able to finish that request — could you rephrase or try again?"
+    history.push({ role: "assistant", content: fallback })
     await saveHistory(userId, history)
-    onToken("I wasn't able to finish that request — could you rephrase or try again?")
+    onToken(fallback)
     onToolResults(toolResults)
 }
