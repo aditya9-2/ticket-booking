@@ -5,12 +5,19 @@ export const toolDefinitions = [
         type: "function",
         function: {
             name: "searchEvents",
-            description: "Search upcoming events by keyword and/or maximum price.",
+            description: "Search upcoming events by keyword, category, venue, location, and/or maximum price.",
             parameters: {
                 type: "object",
                 properties: {
-                    query: { type: "string", description: "Keyword, e.g. 'comedy'" },
+                    query: { type: "string", description: "Keyword to search in the event name, e.g. 'comedy night'" },
                     maxPrice: { type: "number", description: "Maximum ticket price in INR" },
+                    category: {
+                        type: "string",
+                        enum: ["music", "comedy", "theatre", "talks", "sports", "other"],
+                        description: "Event category/mood. Infer this from what the user is in the mood for — e.g. 'funny stuff' → comedy, 'live band' → music.",
+                    },
+                    venue: { type: "string", description: "Venue name or partial venue name, e.g. 'auditorium'" },
+                    location: { type: "string", description: "City or area, e.g. 'Kolkata'" },
                 },
                 required: [],
             },
