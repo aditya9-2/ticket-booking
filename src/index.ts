@@ -12,6 +12,7 @@ import bookingRouter from "./routes/bookingRouter.js";
 import adminBookingRouter from "./routes/admin/adminBookingRouter.js";
 import aiRouter from "./routes/aiRoutes.js";
 import paymentRouter from "./routes/paymentRouter.js";
+import walletRouter from "./routes/walletRouter.js";
 import { connectDB } from "./config/db.js";
 
 dotenv.config();
@@ -67,6 +68,7 @@ app.use('/v1/ai', aiRouter);
 // razorpay
 app.use('/v1/payments', paymentRouter);
 
+app.use('/v1/wallet', walletRouter);
 
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     if (err.message === "Not allowed by CORS") {
