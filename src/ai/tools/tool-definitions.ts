@@ -13,7 +13,7 @@ export const toolDefinitions = [
                     maxPrice: { type: "number", description: "Maximum ticket price in INR" },
                     category: {
                         type: "string",
-                        enum: ["music", "comedy", "theatre", "talks", "sports", "other"],
+                        enum: ["music", "comedy", "theatre", "talks", "sports", "movies", "other"],
                         description: "Event category/mood. Infer this from what the user is in the mood for — e.g. 'funny stuff' → comedy, 'live band' → music.",
                     },
                     venue: { type: "string", description: "Venue name or partial venue name, e.g. 'auditorium'" },

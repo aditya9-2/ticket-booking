@@ -4,5 +4,6 @@ export enum EventCategory {
     Theatre = "theatre",
     Talks = "talks",
     Sports = "sports",
+    Movies = "movies",
     Other = "other",
 }

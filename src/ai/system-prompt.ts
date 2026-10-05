@@ -49,6 +49,7 @@ export const SYSTEM_PROMPT = `
             - "live music" / "concert" / "band" → music
             - "a play" / "drama" / "stage show" → theatre
             - "a talk" / "lecture" / "panel" → talks
+            - "a movie" / "film" / "screening" → movies
             - "a match" / "game" → sports
 
         When a user mentions a city, area, or venue name ("something in
