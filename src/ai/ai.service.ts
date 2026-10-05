@@ -62,7 +62,7 @@ export const askAIStream = async (
     history.push({ role: "user", content: userMessage })
 
     let rounds = 0
-    const toolResults: { name: string; result: any }[] = []
+    let lastRoundToolResults: { name: string; result: any }[] = []
 
     while (rounds < MAX_TOOL_ROUNDS) {
         const probe = await aiClient.chat.completions.create({
@@ -78,7 +78,7 @@ export const askAIStream = async (
             history.push({ role: "assistant", content: fallback })
             await saveHistory(userId, history)
             onToken(fallback)
-            onToolResults(toolResults)
+            onToolResults(lastRoundToolResults)
             return
         }
 
@@ -102,9 +102,6 @@ export const askAIStream = async (
                 }
             }
 
-            // Guard against a model returning truly empty content — never
-            // leave the user with no reply at all, and never save an empty
-            // string as a real assistant turn in history
             if (!fullContent.trim()) {
                 fullContent =
                     "I'm not sure what you'd like to book yet — could you tell me which event, and how many tickets?"
@@ -113,12 +110,13 @@ export const askAIStream = async (
 
             history.push({ role: "assistant", content: fullContent })
             await saveHistory(userId, history)
-            onToolResults(toolResults)
+            onToolResults(lastRoundToolResults)
             return
         }
 
-        // Tool calls present — resolve them silently, no streaming needed here
         history.push(message)
+        // Reset each round
+        const thisRoundToolResults: { name: string; result: any }[] = []
 
         for (const toolCall of message.tool_calls) {
             if (toolCall.type !== "function") {
@@ -132,7 +130,6 @@ export const askAIStream = async (
 
             const name = toolCall.function.name
 
-            // Give the user something to look at while the tool runs
             const statusText: Record<string, string> = {
                 searchEvents: "Searching events…",
                 getEventDetails: "Looking up event details…",
@@ -163,7 +160,7 @@ export const askAIStream = async (
             }
 
             if (["searchEvents", "getEventDetails"].includes(name)) {
-                toolResults.push({ name, result })
+                thisRoundToolResults.push({ name, result })
             }
 
             history.push({
@@ -173,8 +170,7 @@ export const askAIStream = async (
             })
         }
 
-        // Persist after every round, not just at the end — so if something
-        // fails or times out mid-loop, we never lose tool results/booking
+        lastRoundToolResults = thisRoundToolResults
         await saveHistory(userId, history)
         rounds++
     }
@@ -183,5 +179,5 @@ export const askAIStream = async (
     history.push({ role: "assistant", content: fallback })
     await saveHistory(userId, history)
     onToken(fallback)
-    onToolResults(toolResults)
+    onToolResults(lastRoundToolResults)
 }
